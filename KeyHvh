@@ -244,7 +244,7 @@ SubmitButton.MouseButton1Click:Connect(function()
         SuccessFrame:Destroy()
 
         -- Загрузка основного скрипта
-        loadstring(game:HttpGet(""))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/mazahistvdc2-del/roblox/refs/heads/main/HvHsource"))()
 
         ScreenGui:Destroy()
     else
