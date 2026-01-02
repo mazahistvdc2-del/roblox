@@ -177,6 +177,8 @@ local validKeys = {
     ["SUVWASHERE"] = "9DF318DA-2B76-4D6F-9E6F-0E482C3043A7",
     ["oxygen.ksHJ2j-30-1.1.26"] = "D8D74D03-9D73-40AE-8BAC-01B59E0751FB",
     ["oxygen.hdDJ2j-30-1.1.26"] = "F4E94806-BCB6-488F-907A-06A61AFFB5CA",
+    ["oxygen.hdDJ2j-30-1.1.26"] = "032ECE50-261B-4A45-BBEB-B75E9FE7A09C",
+    ["oxygen.hdDJ2j-30-1.1.26"] = "1",
     ["oxygen.hdBJ2j-30-1.1.26"] = "02918FA7-17FD-4C1D-A79A-709E57B47B84"
     -- Добавляй свои ключи здесь (без запятой после последнего!)
 }
