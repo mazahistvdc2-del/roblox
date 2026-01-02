@@ -1,0 +1,2493 @@
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- // Настройки темы Gamesense //
+local Theme = {
+    Main = Color3.fromRGB(12, 12, 12),
+    Group = Color3.fromRGB(19, 19, 19),
+    Stroke = Color3.fromRGB(45, 45, 45),
+    Accent = Color3.fromRGB(168, 247, 50),
+    Text = Color3.fromRGB(220, 220, 220),
+    TextDim = Color3.fromRGB(140, 140, 140),
+    Font = Enum.Font.Code
+}
+
+-- // Переменные логики //
+local gui = nil
+local mainFrame = nil
+local hotkeyListFrame = nil
+local watermarkFrame = nil
+local isVisible = true
+local hotkeyListVisible = true
+local watermarkVisible = true
+local dragging, dragStart, startPos = false, nil, nil
+local connections = {}
+local effects = {}
+local activeHotkeys = {}
+
+-- Переменные для деффенсива
+local currentKeybind = Enum.KeyCode.Delete
+local lastDeffTime = 0
+local doubleTapEnabled = false
+local currentMode = "Off"
+local deffensiveBind = Enum.KeyCode.E
+
+-- // FAKEDUCK PRO VARIABLES //
+local fakeduckEnabled = false
+local fakeduckKey = Enum.KeyCode.X
+local fakeduckLockKey = Enum.KeyCode.C
+local fakeduckConnection = nil
+local fakeduckCurrentTarget = nil
+local fakeduckIsCrouched = false
+local fakeduckIsLockHeld = false
+local fakeduckCrouchIdleAnim = nil
+local fakeduckCrouchWalkAnim = nil
+local FAKEDUCK_MAX_DISTANCE = 200
+local fakeduckTeamCheck = true
+local fakeduckFakeFlick = false
+
+-- // ANTIAIM VARIABLES //
+local antiaimEnabled = false
+local antiaimMode = "Off"
+local antiaimConnection = nil
+local antiaimYawOffset = 0
+local antiaimSwitchState = false
+local antiaimLastSwitch = 0
+
+-- ANTIAIM SETTINGS
+local antiaimJitterAngle = 60
+local antiaim5YawAngles = {0, 72, 144, 216, 288}
+local antiaim3YawAngles = {-90, 0, 90}
+local antiaimSwitchAngle = 120
+local antiaimSpinSpeed = 15
+local antiaim5YawSpeed = 0.15
+local antiaim3YawSpeed = 0.2
+local antiaimSwitchSpeed = 10
+local antiaimJitterSpeed = 1
+local antiaim5YawIndex = 1
+local antiaim3YawIndex = 1
+local antiaim5YawLastSwitch = 0
+local antiaim3YawLastSwitch = 0
+
+-- // BODY LEAN VARIABLES //
+local bodyLeanEnabled = false
+local bodyLeanMode = "Off"
+local bodyLeanAmount = 30
+
+-- // RAGEBOT VARIABLES //
+local ragebotEnabled = false
+local ragebotKey = Enum.KeyCode.Q
+local ragebotConnection = nil
+local ragebotResolverEnabled = false
+local ragebotNoSpreadEnabled = false
+local ragebotPredictionEnabled = true
+local ragebotTeamCheck = true
+local ragebotAutoFire = true
+local ragebotHitbox = "Head" -- Head, Torso, Random
+local ragebotMaxDistance = 500
+local ragebotFireRate = 0.1
+local ragebotLastShot = 0
+
+-- Resolver data
+local resolverHistory = {}
+local resolverMaxSamples = 10
+
+-- Prediction data
+local predictionMultiplier = 1.0
+
+-- // ZEUSBOT VARIABLES //
+local zeusbotEnabled = false
+local zeusbotConnection = nil
+local zeusbotTeamCheck = true
+local zeusbotMaxDistance = 5 -- 5 студов для Zeus
+local zeusbotLastShot = 0
+local zeusbotFireRate = 0.1
+
+-- // AI PEEK V3 VARIABLES //
+local aiPeekEnabled = false
+local aiPeekKey = Enum.KeyCode.LeftAlt
+local aiPeekMode = "Hold" -- Hold или Toggle
+local IsPeekActive = false
+local IsTeleporting = false
+local LastTPTime = 0
+local PeekPoints = {}
+
+-- AI PEEK V3 SETTINGS
+local POINTS_PER_RING = 12
+local RING_DISTANCES = {3.5, 5.5, 7.5}
+local PEEK_TIME = 0.32
+local PEEK_COOLDOWN = 0.5
+local ENEMY_RANGE = 180
+local MOVE_SPEED = 130
+local CHECK_INTERVAL = 0.045
+
+local RayParams = RaycastParams.new()
+RayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+-- // HOTKEY LIST SYSTEM (DRAGGABLE) //
+local hotkeyListDragging = false
+local hotkeyListDragStart = nil
+local hotkeyListStartPos = nil
+
+local function CreateHotkeyList()
+    if hotkeyListFrame then hotkeyListFrame:Destroy() end
+    
+    hotkeyListFrame = Instance.new("Frame")
+    hotkeyListFrame.Name = "HotkeyList"
+    hotkeyListFrame.Size = UDim2.new(0, 160, 0, 24)
+    hotkeyListFrame.Position = UDim2.new(1, -170, 0, 200)
+    hotkeyListFrame.BackgroundColor3 = Theme.Main
+    hotkeyListFrame.BackgroundTransparency = 0.1
+    hotkeyListFrame.BorderSizePixel = 0
+    hotkeyListFrame.Active = true
+    hotkeyListFrame.Parent = gui
+    
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Color = Theme.Stroke
+    Stroke.Thickness = 1
+    Stroke.Parent = hotkeyListFrame
+    
+    local GradientLine = Instance.new("Frame")
+    GradientLine.Size = UDim2.new(1, 0, 0, 2)
+    GradientLine.BorderSizePixel = 0
+    GradientLine.Parent = hotkeyListFrame
+    
+    local UIGradient = Instance.new("UIGradient")
+    UIGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Theme.Accent),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 200, 50)),
+    })
+    UIGradient.Parent = GradientLine
+    
+    local Title = Instance.new("TextLabel")
+    Title.Text = "hotkeys"
+    Title.Size = UDim2.new(1, 0, 0, 20)
+    Title.Position = UDim2.new(0, 0, 0, 3)
+    Title.BackgroundTransparency = 1
+    Title.Font = Theme.Font
+    Title.TextSize = 11
+    Title.TextColor3 = Theme.TextDim
+    Title.Parent = hotkeyListFrame
+    
+    local Content = Instance.new("Frame")
+    Content.Name = "Content"
+    Content.Size = UDim2.new(1, -8, 1, -24)
+    Content.Position = UDim2.new(0, 4, 0, 22)
+    Content.BackgroundTransparency = 1
+    Content.Parent = hotkeyListFrame
+    
+    local List = Instance.new("UIListLayout")
+    List.SortOrder = Enum.SortOrder.LayoutOrder
+    List.Padding = UDim.new(0, 2)
+    List.Parent = Content
+    
+    List:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        hotkeyListFrame.Size = UDim2.new(0, 160, 0, math.max(24, List.AbsoluteContentSize.Y + 26))
+    end)
+    
+    hotkeyListFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            hotkeyListDragging = true
+            hotkeyListDragStart = input.Position
+            hotkeyListStartPos = hotkeyListFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    hotkeyListDragging = false
+                end
+            end)
+        end
+    end)
+    
+    hotkeyListFrame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and hotkeyListDragging then
+            local delta = input.Position - hotkeyListDragStart
+            hotkeyListFrame.Position = UDim2.new(hotkeyListStartPos.X.Scale, hotkeyListStartPos.X.Offset + delta.X, hotkeyListStartPos.Y.Scale, hotkeyListStartPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+local function UpdateHotkeyList()
+    if not hotkeyListFrame then return end
+    local Content = hotkeyListFrame:FindFirstChild("Content")
+    if not Content then return end
+    
+    for _, child in pairs(Content:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+    
+    for name, data in pairs(activeHotkeys) do
+        if data.active then
+            local Entry = Instance.new("Frame")
+            Entry.Size = UDim2.new(1, 0, 0, 16)
+            Entry.BackgroundTransparency = 1
+            Entry.Parent = Content
+            
+            local NameLabel = Instance.new("TextLabel")
+            NameLabel.Text = name
+            NameLabel.Size = UDim2.new(0.65, 0, 1, 0)
+            NameLabel.BackgroundTransparency = 1
+            NameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            NameLabel.Font = Theme.Font
+            NameLabel.TextSize = 11
+            NameLabel.TextColor3 = Theme.Text
+            NameLabel.Parent = Entry
+            
+            local KeyLabel = Instance.new("TextLabel")
+            KeyLabel.Text = "[" .. data.key .. "]"
+            KeyLabel.Size = UDim2.new(0.35, 0, 1, 0)
+            KeyLabel.Position = UDim2.new(0.65, 0, 0, 0)
+            KeyLabel.BackgroundTransparency = 1
+            KeyLabel.TextXAlignment = Enum.TextXAlignment.Right
+            KeyLabel.Font = Theme.Font
+            KeyLabel.TextSize = 10
+            KeyLabel.TextColor3 = data.holding and Theme.Accent or Theme.TextDim
+            KeyLabel.Parent = Entry
+            
+            if data.holding then
+                local Indicator = Instance.new("Frame")
+                Indicator.Size = UDim2.new(0, 3, 1, -4)
+                Indicator.Position = UDim2.new(0, -6, 0, 2)
+                Indicator.BackgroundColor3 = Theme.Accent
+                Indicator.BorderSizePixel = 0
+                Indicator.Parent = Entry
+            end
+        end
+    end
+end
+
+local function SetHotkeyActive(name, key, active, holding)
+    activeHotkeys[name] = {
+        active = active,
+        key = key,
+        holding = holding or false
+    }
+    UpdateHotkeyList()
+end
+
+local function RemoveHotkey(name)
+    activeHotkeys[name] = nil
+    UpdateHotkeyList()
+end
+
+-- // WATERMARK SYSTEM //
+local function CreateWatermark()
+    if watermarkFrame then watermarkFrame:Destroy() end
+    
+    watermarkFrame = Instance.new("Frame")
+    watermarkFrame.Name = "Watermark"
+    watermarkFrame.Size = UDim2.new(0, 200, 0, 22)
+    watermarkFrame.Position = UDim2.new(0, 10, 0, 10)
+    watermarkFrame.BackgroundColor3 = Theme.Main
+    watermarkFrame.BackgroundTransparency = 0.1
+    watermarkFrame.BorderSizePixel = 0
+    watermarkFrame.Parent = gui
+    
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Color = Theme.Stroke
+    Stroke.Thickness = 1
+    Stroke.Parent = watermarkFrame
+    
+    local GradientLine = Instance.new("Frame")
+    GradientLine.Size = UDim2.new(1, 0, 0, 2)
+    GradientLine.BorderSizePixel = 0
+    GradientLine.Parent = watermarkFrame
+    
+    local UIGradient = Instance.new("UIGradient")
+    UIGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Theme.Accent),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 200, 50)),
+    })
+    UIGradient.Parent = GradientLine
+    
+    local WatermarkText = Instance.new("TextLabel")
+    WatermarkText.Name = "Text"
+    WatermarkText.Size = UDim2.new(1, -10, 1, -2)
+    WatermarkText.Position = UDim2.new(0, 5, 0, 2)
+    WatermarkText.BackgroundTransparency = 1
+    WatermarkText.Font = Theme.Font
+    WatermarkText.TextSize = 11
+    WatermarkText.TextColor3 = Theme.Text
+    WatermarkText.TextXAlignment = Enum.TextXAlignment.Left
+    WatermarkText.Text = "oxygen.lord | fps: -- | ping: --ms"
+    WatermarkText.Parent = watermarkFrame
+    
+    local lastTime = tick()
+    local frameCount = 0
+    
+    table.insert(connections, RunService.RenderStepped:Connect(function()
+        frameCount = frameCount + 1
+        local currentTime = tick()
+        if currentTime - lastTime >= 0.5 then
+            local fps = math.floor(frameCount / (currentTime - lastTime))
+            local ping = math.floor(LocalPlayer:GetNetworkPing() * 1000)
+            WatermarkText.Text = "oxygen.lord | fps: " .. fps .. " | ping: " .. ping .. "ms"
+            
+            local textSize = game:GetService("TextService"):GetTextSize(WatermarkText.Text, WatermarkText.TextSize, WatermarkText.Font, Vector2.new(1000, 22))
+            watermarkFrame.Size = UDim2.new(0, textSize.X + 20, 0, 22)
+            
+            frameCount = 0
+            lastTime = currentTime
+        end
+    end))
+end
+
+
+-- // FAKEDUCK PRO FUNCTIONS //
+local function GetFakeduckAnimator()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid then return nil end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then
+        animator = Instance.new("Animator")
+        animator.Parent = humanoid
+    end
+    return animator
+end
+
+local function LoadFakeduckAnimations()
+    local animator = GetFakeduckAnimator()
+    if not animator then return end
+    
+    pcall(function()
+        local anim1 = Instance.new("Animation")
+        anim1.AnimationId = "rbxassetid://102226306945117"
+        fakeduckCrouchIdleAnim = animator:LoadAnimation(anim1)
+        fakeduckCrouchIdleAnim.Priority = Enum.AnimationPriority.Action4
+        fakeduckCrouchIdleAnim.Looped = true
+        
+        local anim2 = Instance.new("Animation")
+        anim2.AnimationId = "rbxassetid://124458965304788"
+        fakeduckCrouchWalkAnim = animator:LoadAnimation(anim2)
+        fakeduckCrouchWalkAnim.Priority = Enum.AnimationPriority.Action4
+        fakeduckCrouchWalkAnim.Looped = true
+    end)
+end
+
+local function IsFakeduckMoving()
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    local vel = hrp.AssemblyLinearVelocity
+    return Vector3.new(vel.X, 0, vel.Z).Magnitude > 0.5
+end
+
+local function FakeduckCanSeePoint(origin, target)
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local direction = (target - origin)
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = {char}
+    local result = Workspace:Raycast(origin, direction, rayParams)
+    if not result then return true end
+    local hitPart = result.Instance
+    local hitChar = hitPart:FindFirstAncestorOfClass("Model")
+    if hitChar and Players:GetPlayerFromCharacter(hitChar) then
+        return true
+    end
+    return false
+end
+
+local function FakeduckIsInFOV(enemyPosition)
+    local Camera = Workspace.CurrentCamera
+    local _, onScreen = Camera:WorldToScreenPoint(enemyPosition)
+    return onScreen
+end
+
+local function FakeduckIsPlayerAlive(plr)
+    if not plr then return false end
+    local char = plr.Character
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return false end
+    return hum.Health > 0
+end
+
+local function FakeduckIsTeammate(player)
+    if not fakeduckTeamCheck then return false end
+    if not LocalPlayer.Team then return false end
+    if not player.Team then return false end
+    return player.Team == LocalPlayer.Team
+end
+
+local function FakeduckIsTeammateByColor(player)
+    if not fakeduckTeamCheck then return false end
+    if LocalPlayer.TeamColor and player.TeamColor then
+        return LocalPlayer.TeamColor == player.TeamColor
+    end
+    return false
+end
+
+local function FakeduckFindVisibleEnemy()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local myHRP = char:FindFirstChild("HumanoidRootPart")
+    local myHead = char:FindFirstChild("Head")
+    if not myHRP or not myHead then return nil end
+    
+    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+        if otherPlayer ~= LocalPlayer then
+            if FakeduckIsTeammate(otherPlayer) then continue end
+            if FakeduckIsTeammateByColor(otherPlayer) then continue end
+            
+            local otherChar = otherPlayer.Character
+            if otherChar then
+                local otherHumanoid = otherChar:FindFirstChild("Humanoid")
+                local otherHRP = otherChar:FindFirstChild("HumanoidRootPart")
+                local otherHead = otherChar:FindFirstChild("Head")
+                
+                if otherHumanoid and otherHumanoid.Health > 0 and otherHRP and otherHead then
+                    local distance = (myHRP.Position - otherHRP.Position).Magnitude
+                    if distance <= FAKEDUCK_MAX_DISTANCE then
+                        if FakeduckIsInFOV(otherHead.Position) then
+                            if FakeduckCanSeePoint(myHead.Position, otherHead.Position) then
+                                return otherPlayer
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function PlayFakeduckCrouchAnim()
+    pcall(function()
+        if IsFakeduckMoving() then
+            if fakeduckCrouchIdleAnim and fakeduckCrouchIdleAnim.IsPlaying then
+                fakeduckCrouchIdleAnim:Stop(0)
+            end
+            if fakeduckCrouchWalkAnim and not fakeduckCrouchWalkAnim.IsPlaying then
+                fakeduckCrouchWalkAnim:Play(0)
+            end
+        else
+            if fakeduckCrouchWalkAnim and fakeduckCrouchWalkAnim.IsPlaying then
+                fakeduckCrouchWalkAnim:Stop(0)
+            end
+            if fakeduckCrouchIdleAnim and not fakeduckCrouchIdleAnim.IsPlaying then
+                fakeduckCrouchIdleAnim:Play(0)
+            end
+        end
+    end)
+end
+
+local function StopFakeduckCrouchAnim()
+    pcall(function()
+        if fakeduckCrouchIdleAnim and fakeduckCrouchIdleAnim.IsPlaying then
+            fakeduckCrouchIdleAnim:Stop(0)
+        end
+        if fakeduckCrouchWalkAnim and fakeduckCrouchWalkAnim.IsPlaying then
+            fakeduckCrouchWalkAnim:Stop(0)
+        end
+    end)
+end
+
+local function ApplyFakeduckCrouch()
+    if fakeduckIsCrouched then
+        PlayFakeduckCrouchAnim()
+        return
+    end
+    fakeduckIsCrouched = true
+    PlayFakeduckCrouchAnim()
+end
+
+local function RemoveFakeduckCrouch()
+    if not fakeduckIsCrouched then return end
+    fakeduckIsCrouched = false
+    StopFakeduckCrouchAnim()
+end
+
+local fakeduckFakeFlickLastTime = 0
+local fakeduckFakeFlickState = false
+
+local function EnableFakeduck()
+    if fakeduckEnabled then return end
+    fakeduckEnabled = true
+    fakeduckIsCrouched = false
+    fakeduckCurrentTarget = nil
+    LoadFakeduckAnimations()
+    
+    fakeduckConnection = RunService.RenderStepped:Connect(function()
+        if not fakeduckEnabled then return end
+        
+        if fakeduckIsLockHeld then
+            ApplyFakeduckCrouch()
+            fakeduckCurrentTarget = nil
+            return
+        end
+        
+        local visibleEnemy = FakeduckFindVisibleEnemy()
+        if visibleEnemy then
+            fakeduckCurrentTarget = visibleEnemy
+            RemoveFakeduckCrouch()
+        else
+            if fakeduckCurrentTarget then
+                if not FakeduckIsPlayerAlive(fakeduckCurrentTarget) then
+                    fakeduckCurrentTarget = nil
+                    ApplyFakeduckCrouch()
+                end
+            else
+                ApplyFakeduckCrouch()
+                
+                if fakeduckFakeFlick then
+                    local t = tick()
+                    if not fakeduckFakeFlickState then
+                        if t - fakeduckFakeFlickLastTime > 0.3 then
+                            fakeduckFakeFlickState = true
+                            fakeduckFakeFlickLastTime = t
+                            RemoveFakeduckCrouch()
+                        end
+                    else
+                        if t - fakeduckFakeFlickLastTime > 0.1 then
+                            fakeduckFakeFlickState = false
+                            fakeduckFakeFlickLastTime = t
+                            ApplyFakeduckCrouch()
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    ApplyFakeduckCrouch()
+    SetHotkeyActive("Fakeduck", fakeduckKey.Name, true, true)
+end
+
+local function DisableFakeduck()
+    if not fakeduckEnabled then return end
+    fakeduckEnabled = false
+    
+    if fakeduckConnection then
+        fakeduckConnection:Disconnect()
+        fakeduckConnection = nil
+    end
+    
+    RemoveFakeduckCrouch()
+    fakeduckCurrentTarget = nil
+    fakeduckFakeFlickState = false
+    RemoveHotkey("Fakeduck")
+end
+
+local function ToggleFakeduck()
+    if fakeduckEnabled then
+        DisableFakeduck()
+    else
+        EnableFakeduck()
+    end
+end
+
+
+-- // ANTIAIM FUNCTIONS //
+local antiaimOriginalC0 = nil
+local antiaimSpinAngle = 0
+local antiaimJitterLastUpdate = 0
+local antiaimCurrentJitter = 0
+
+local function GetAntiaimYaw()
+    local t = tick()
+    
+    if antiaimMode == "5 Yaw" then
+        if t - antiaim5YawLastSwitch > antiaim5YawSpeed then
+            antiaim5YawIndex = antiaim5YawIndex + 1
+            if antiaim5YawIndex > #antiaim5YawAngles then
+                antiaim5YawIndex = 1
+            end
+            antiaim5YawLastSwitch = t
+        end
+        return antiaim5YawAngles[antiaim5YawIndex]
+        
+    elseif antiaimMode == "3 Yaw" then
+        if t - antiaim3YawLastSwitch > antiaim3YawSpeed then
+            antiaim3YawIndex = antiaim3YawIndex + 1
+            if antiaim3YawIndex > #antiaim3YawAngles then
+                antiaim3YawIndex = 1
+            end
+            antiaim3YawLastSwitch = t
+        end
+        return antiaim3YawAngles[antiaim3YawIndex]
+        
+    elseif antiaimMode == "Switch" then
+        local switchInterval = 1 / antiaimSwitchSpeed
+        if t - antiaimLastSwitch > switchInterval then
+            antiaimSwitchState = not antiaimSwitchState
+            antiaimLastSwitch = t
+        end
+        return antiaimSwitchState and antiaimSwitchAngle or -antiaimSwitchAngle
+        
+    elseif antiaimMode == "Jitter" then
+        local jitterInterval = 1 / (antiaimJitterSpeed * 60)
+        if t - antiaimJitterLastUpdate > jitterInterval then
+            antiaimCurrentJitter = (math.random() > 0.5 and 1 or -1) * math.random(antiaimJitterAngle, antiaimJitterAngle + 40)
+            antiaimJitterLastUpdate = t
+        end
+        return antiaimCurrentJitter
+        
+    elseif antiaimMode == "Spin" then
+        antiaimSpinAngle = (antiaimSpinAngle + antiaimSpinSpeed) % 360
+        return antiaimSpinAngle
+        
+    elseif antiaimMode == "Random" then
+        return math.random(-180, 180)
+        
+    elseif antiaimMode == "Backwards" then
+        return 180
+        
+    elseif antiaimMode == "Sideways" then
+        local switchInterval = 1 / antiaimSwitchSpeed
+        if t - antiaimLastSwitch > switchInterval * 2 then
+            antiaimSwitchState = not antiaimSwitchState
+            antiaimLastSwitch = t
+        end
+        return antiaimSwitchState and 90 or -90
+        
+    elseif antiaimMode == "Fake Spin" then
+        if t - antiaim5YawLastSwitch > antiaim5YawSpeed then
+            antiaim5YawIndex = (antiaim5YawIndex % 4) + 1
+            antiaim5YawLastSwitch = t
+        end
+        local angles = {0, 90, 180, -90}
+        return angles[antiaim5YawIndex]
+        
+    elseif antiaimMode == "Desync" then
+        local switchInterval = 1 / antiaimSwitchSpeed
+        if t - antiaimLastSwitch > switchInterval then
+            antiaimSwitchState = not antiaimSwitchState
+            antiaimLastSwitch = t
+        end
+        return antiaimSwitchState and 58 or -58
+    end
+    
+    return 0
+end
+
+local function ApplyAntiaimRotation(hrp, yaw)
+    if not hrp then return end
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    
+    local camLook = camera.CFrame.LookVector
+    local camYaw = math.atan2(camLook.X, camLook.Z)
+    local finalYaw = camYaw + math.rad(yaw)
+    local pos = hrp.Position
+    hrp.CFrame = CFrame.new(pos) * CFrame.Angles(0, finalYaw, 0)
+end
+
+-- Body Lean
+local bodyLeanConnection = nil
+local bodyLeanOriginalC0 = nil
+
+local function StartBodyLean()
+    if bodyLeanConnection then return end
+    
+    bodyLeanConnection = RunService.RenderStepped:Connect(function()
+        if not bodyLeanEnabled or bodyLeanMode == "Off" then return end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        
+        local lean = 0
+        if bodyLeanMode == "Left" then
+            lean = -bodyLeanAmount
+        elseif bodyLeanMode == "Right" then
+            lean = bodyLeanAmount
+        elseif bodyLeanMode == "Jitter" then
+            lean = (math.random() > 0.5 and 1 or -1) * bodyLeanAmount
+        elseif bodyLeanMode == "Spin" then
+            lean = math.sin(tick() * 5) * bodyLeanAmount
+        end
+        
+        local upperTorso = char:FindFirstChild("UpperTorso")
+        if upperTorso then
+            local waist = upperTorso:FindFirstChild("Waist")
+            if waist and waist:IsA("Motor6D") then
+                if not bodyLeanOriginalC0 then
+                    bodyLeanOriginalC0 = waist.C0
+                end
+                waist.C0 = bodyLeanOriginalC0 * CFrame.Angles(0, 0, math.rad(lean))
+                return
+            end
+        end
+        
+        local torso = char:FindFirstChild("Torso")
+        if torso then
+            local rootHip = torso:FindFirstChild("Root Hip") or torso:FindFirstChild("RootJoint")
+            if rootHip and rootHip:IsA("Motor6D") then
+                if not bodyLeanOriginalC0 then
+                    bodyLeanOriginalC0 = rootHip.C0
+                end
+                rootHip.C0 = bodyLeanOriginalC0 * CFrame.Angles(0, 0, math.rad(lean))
+                return
+            end
+        end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local currentCFrame = hrp.CFrame
+            local pos = currentCFrame.Position
+            local look = currentCFrame.LookVector
+            hrp.CFrame = CFrame.new(pos, pos + look) * CFrame.Angles(0, 0, math.rad(lean * 0.5))
+        end
+    end)
+end
+
+local function StopBodyLean()
+    if bodyLeanConnection then
+        bodyLeanConnection:Disconnect()
+        bodyLeanConnection = nil
+    end
+    
+    if bodyLeanOriginalC0 then
+        local char = LocalPlayer.Character
+        if char then
+            local upperTorso = char:FindFirstChild("UpperTorso")
+            if upperTorso then
+                local waist = upperTorso:FindFirstChild("Waist")
+                if waist and waist:IsA("Motor6D") then
+                    waist.C0 = bodyLeanOriginalC0
+                end
+            end
+            local torso = char:FindFirstChild("Torso")
+            if torso then
+                local rootHip = torso:FindFirstChild("Root Hip") or torso:FindFirstChild("RootJoint")
+                if rootHip and rootHip:IsA("Motor6D") then
+                    rootHip.C0 = bodyLeanOriginalC0
+                end
+            end
+        end
+        bodyLeanOriginalC0 = nil
+    end
+end
+
+local function StartAntiaim()
+    if antiaimConnection then return end
+    
+    antiaimConnection = RunService.RenderStepped:Connect(function()
+        if not antiaimEnabled or antiaimMode == "Off" then return end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local humanoid = char:FindFirstChild("Humanoid")
+        if not hrp or not humanoid then return end
+        
+        local yaw = GetAntiaimYaw()
+        antiaimYawOffset = yaw
+        ApplyAntiaimRotation(hrp, yaw)
+    end)
+end
+
+local function StopAntiaim()
+    if antiaimConnection then
+        antiaimConnection:Disconnect()
+        antiaimConnection = nil
+    end
+end
+
+
+-- // RAGEBOT FUNCTIONS //
+
+-- Получить fireShot remote
+local function GetFireShotRemote()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    
+    -- Ищем components с fireShot
+    local components = char:FindFirstChild("components")
+    if components then
+        local fireShot = components:FindFirstChild("fireShot")
+        if fireShot then return fireShot end
+    end
+    
+    -- Альтернативный поиск
+    for _, v in pairs(char:GetDescendants()) do
+        if v.Name == "fireShot" and v:IsA("RemoteEvent") then
+            return v
+        end
+    end
+    
+    -- Поиск в ReplicatedStorage
+    local rs = game:GetService("ReplicatedStorage")
+    for _, v in pairs(rs:GetDescendants()) do
+        if v.Name == "fireShot" and v:IsA("RemoteEvent") then
+            return v
+        end
+    end
+    
+    return nil
+end
+
+-- Team check для Ragebot
+local function RagebotIsTeammate(player)
+    if not ragebotTeamCheck then return false end
+    if not LocalPlayer.Team then return false end
+    if not player.Team then return false end
+    return player.Team == LocalPlayer.Team
+end
+
+local function RagebotIsTeammateByColor(player)
+    if not ragebotTeamCheck then return false end
+    if LocalPlayer.TeamColor and player.TeamColor then
+        return LocalPlayer.TeamColor == player.TeamColor
+    end
+    return false
+end
+
+-- Resolver - сохраняет историю позиций врага
+local function ResolverUpdate(player, position)
+    if not resolverHistory[player] then
+        resolverHistory[player] = {}
+    end
+    
+    table.insert(resolverHistory[player], {
+        pos = position,
+        time = tick()
+    })
+    
+    -- Ограничиваем историю
+    while #resolverHistory[player] > resolverMaxSamples do
+        table.remove(resolverHistory[player], 1)
+    end
+end
+
+-- Resolver - предсказывает реальную позицию
+local function ResolverGetPosition(player, targetPart)
+    if not ragebotResolverEnabled then
+        return targetPart.Position
+    end
+    
+    local history = resolverHistory[player]
+    if not history or #history < 2 then
+        return targetPart.Position
+    end
+    
+    -- Вычисляем среднюю скорость движения
+    local totalVelocity = Vector3.new(0, 0, 0)
+    local samples = 0
+    
+    for i = 2, #history do
+        local prev = history[i - 1]
+        local curr = history[i]
+        local dt = curr.time - prev.time
+        if dt > 0 then
+            local vel = (curr.pos - prev.pos) / dt
+            totalVelocity = totalVelocity + vel
+            samples = samples + 1
+        end
+    end
+    
+    if samples > 0 then
+        local avgVelocity = totalVelocity / samples
+        -- Предсказываем позицию на основе пинга
+        local ping = LocalPlayer:GetNetworkPing()
+        local predictedPos = targetPart.Position + (avgVelocity * ping * predictionMultiplier)
+        return predictedPos
+    end
+    
+    return targetPart.Position
+end
+
+-- Prediction - предсказание позиции с учётом движения
+local function PredictPosition(targetPart, targetHRP)
+    if not ragebotPredictionEnabled then
+        return targetPart.Position
+    end
+    
+    local velocity = targetHRP.AssemblyLinearVelocity
+    local ping = LocalPlayer:GetNetworkPing()
+    
+    -- Предсказываем где будет враг
+    local predictedPos = targetPart.Position + (velocity * ping * predictionMultiplier)
+    
+    return predictedPos
+end
+
+-- No Spread - вычисляет точное направление
+local function CalculateNoSpreadDirection(origin, targetPos)
+    if not ragebotNoSpreadEnabled then
+        return (targetPos - origin).Unit
+    end
+    
+    -- Точное направление без разброса
+    local direction = (targetPos - origin).Unit
+    return direction
+end
+
+-- Проверка видимости цели
+local function RagebotCanSeeTarget(origin, targetPos, myChar, enemyChar)
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = {myChar}
+    
+    local direction = targetPos - origin
+    local result = Workspace:Raycast(origin, direction, rayParams)
+    
+    if not result then return true end
+    
+    -- Проверяем попали ли мы во врага
+    local hitPart = result.Instance
+    if hitPart:IsDescendantOf(enemyChar) then
+        return true
+    end
+    
+    return false
+end
+
+-- Получить hitbox часть
+local function GetTargetPart(char)
+    if ragebotHitbox == "Head" then
+        return char:FindFirstChild("Head")
+    elseif ragebotHitbox == "Torso" then
+        return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+    elseif ragebotHitbox == "Random" then
+        local parts = {"Head", "UpperTorso", "Torso", "HumanoidRootPart", "LeftUpperArm", "RightUpperArm"}
+        for _, name in ipairs(parts) do
+            local part = char:FindFirstChild(name)
+            if part and math.random() > 0.5 then
+                return part
+            end
+        end
+        return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+    end
+    return char:FindFirstChild("Head")
+end
+
+-- Найти лучшую цель
+local function RagebotFindTarget()
+    local myChar = LocalPlayer.Character
+    if not myChar then return nil end
+    
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    local myHead = myChar:FindFirstChild("Head")
+    if not myHRP or not myHead then return nil end
+    
+    local bestTarget = nil
+    local bestDistance = ragebotMaxDistance
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if RagebotIsTeammate(player) then continue end
+            if RagebotIsTeammateByColor(player) then continue end
+            
+            local char = player.Character
+            if char then
+                local hum = char:FindFirstChild("Humanoid")
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local targetPart = GetTargetPart(char)
+                
+                if hum and hum.Health > 0 and hrp and targetPart then
+                    local distance = (myHRP.Position - hrp.Position).Magnitude
+                    
+                    if distance < bestDistance then
+                        -- Проверяем видимость
+                        if RagebotCanSeeTarget(myHead.Position, targetPart.Position, myChar, char) then
+                            bestDistance = distance
+                            bestTarget = {
+                                player = player,
+                                character = char,
+                                humanoid = hum,
+                                hrp = hrp,
+                                targetPart = targetPart,
+                                distance = distance
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return bestTarget
+end
+
+-- Выстрел
+local function RagebotShoot(target)
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    
+    local myHead = myChar:FindFirstChild("Head")
+    if not myHead then return end
+    
+    -- Ищем FireShot в оружии (Tool) персонажа
+    -- Путь: Character -> [Weapon Tool] -> Remotes -> FireShot
+    local fireShot = nil
+    
+    -- 1. Ищем в Tool (оружие) -> Remotes -> FireShot
+    for _, tool in pairs(myChar:GetChildren()) do
+        if tool:IsA("Tool") or tool:IsA("Model") then
+            local remotes = tool:FindFirstChild("Remotes")
+            if remotes then
+                fireShot = remotes:FindFirstChild("FireShot") or remotes:FindFirstChild("fireShot")
+                if fireShot then break end
+            end
+            -- Также проверяем напрямую в tool
+            if not fireShot then
+                fireShot = tool:FindFirstChild("FireShot") or tool:FindFirstChild("fireShot")
+                if fireShot then break end
+            end
+        end
+    end
+    
+    -- 2. Поиск по всем потомкам персонажа
+    if not fireShot then
+        for _, v in pairs(myChar:GetDescendants()) do
+            if (v.Name == "FireShot" or v.Name == "fireShot") and (v:IsA("RemoteEvent") or v:IsA("RemoteFunction")) then
+                fireShot = v
+                break
+            end
+        end
+    end
+    
+    -- 3. Поиск в ReplicatedStorage
+    if not fireShot then
+        local rs = game:GetService("ReplicatedStorage")
+        for _, v in pairs(rs:GetDescendants()) do
+            if (v.Name == "FireShot" or v.Name == "fireShot") and (v:IsA("RemoteEvent") or v:IsA("RemoteFunction")) then
+                fireShot = v
+                break
+            end
+        end
+    end
+    
+    if not fireShot then 
+        warn("[Ragebot] FireShot remote not found! Make sure you have a weapon equipped.")
+        return 
+    end
+    
+    local origin = myHead.Position
+    
+    -- Обновляем resolver
+    ResolverUpdate(target.player, target.targetPart.Position)
+    
+    -- Получаем позицию с resolver
+    local resolvedPos = ResolverGetPosition(target.player, target.targetPart)
+    
+    -- Применяем prediction
+    local predictedPos = PredictPosition(target.targetPart, target.hrp)
+    
+    -- Комбинируем resolver и prediction
+    local finalPos
+    if ragebotResolverEnabled then
+        finalPos = resolvedPos
+    else
+        finalPos = predictedPos
+    end
+    
+    -- Вычисляем направление (No Spread)
+    local direction = CalculateNoSpreadDirection(origin, finalPos)
+    
+    -- Стреляем - формат: FireShot:FireServer(origin, direction, targetPart)
+    pcall(function()
+        fireShot:FireServer(origin, direction, target.targetPart)
+    end)
+end
+
+-- Главный цикл Ragebot
+local function StartRagebot()
+    if ragebotConnection then return end
+    
+    ragebotConnection = RunService.RenderStepped:Connect(function()
+        if not ragebotEnabled then return end
+        
+        -- Проверяем fire rate
+        local currentTime = tick()
+        if currentTime - ragebotLastShot < ragebotFireRate then return end
+        
+        -- Ищем цель
+        local target = RagebotFindTarget()
+        
+        if target then
+            -- Auto fire
+            if ragebotAutoFire then
+                RagebotShoot(target)
+                ragebotLastShot = currentTime
+            end
+        end
+    end)
+    
+    SetHotkeyActive("Ragebot", "ON", true, false)
+end
+
+local function StopRagebot()
+    if ragebotConnection then
+        ragebotConnection:Disconnect()
+        ragebotConnection = nil
+    end
+    RemoveHotkey("Ragebot")
+end
+
+
+-- // ZEUSBOT FUNCTIONS //
+
+-- Team check для ZeusBot
+local function ZeusbotIsTeammate(player)
+    if not zeusbotTeamCheck then return false end
+    if not LocalPlayer.Team then return false end
+    if not player.Team then return false end
+    return player.Team == LocalPlayer.Team
+end
+
+local function ZeusbotIsTeammateByColor(player)
+    if not zeusbotTeamCheck then return false end
+    if LocalPlayer.TeamColor and player.TeamColor then
+        return LocalPlayer.TeamColor == player.TeamColor
+    end
+    return false
+end
+
+-- Предикт позиции для Zeus (учитывает движение + пинг)
+local function ZeusbotPredictPosition(hrp)
+    local velocity = hrp.AssemblyLinearVelocity
+    local ping = LocalPlayer:GetNetworkPing()
+    
+    -- Предикт на основе скорости и пинга
+    local predictedPos = hrp.Position + (velocity * ping * 1.2)
+    
+    return predictedPos
+end
+
+-- Найти цель для Zeus (строго 5 студов, без миссов)
+local function ZeusbotFindTarget()
+    local myChar = LocalPlayer.Character
+    if not myChar then return nil end
+    
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return nil end
+    
+    local bestTarget = nil
+    local bestDistance = zeusbotMaxDistance
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if ZeusbotIsTeammate(player) then continue end
+            if ZeusbotIsTeammateByColor(player) then continue end
+            
+            local char = player.Character
+            if char then
+                local hum = char:FindFirstChild("Humanoid")
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+                
+                if hum and hum.Health > 0 and hrp then
+                    -- Используем предикт позицию для расчёта дистанции
+                    local predictedPos = ZeusbotPredictPosition(hrp)
+                    local distance = (myHRP.Position - predictedPos).Magnitude
+                    
+                    -- Строго в пределах дистанции Zeus
+                    if distance <= bestDistance then
+                        bestDistance = distance
+                        bestTarget = {
+                            player = player,
+                            character = char,
+                            humanoid = hum,
+                            hrp = hrp,
+                            torso = torso or hrp,
+                            distance = distance,
+                            predictedPos = predictedPos
+                        }
+                    end
+                end
+            end
+        end
+    end
+    
+    return bestTarget
+end
+
+-- Выстрел Zeus (точный, без миссов)
+local function ZeusbotShoot(target)
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    local myHead = myChar:FindFirstChild("Head")
+    if not myHRP or not myHead then return end
+    
+    -- Ищем Zeus в инвентаре
+    local fireShot = nil
+    local zeusTool = nil
+    
+    for _, tool in pairs(myChar:GetChildren()) do
+        if tool:IsA("Tool") or tool:IsA("Model") then
+            local toolName = tool.Name:lower()
+            if toolName:find("zeus") or toolName:find("taser") then
+                zeusTool = tool
+                local remotes = tool:FindFirstChild("Remotes")
+                if remotes then
+                    fireShot = remotes:FindFirstChild("FireShot") or remotes:FindFirstChild("fireShot")
+                end
+                if not fireShot then
+                    for _, v in pairs(tool:GetDescendants()) do
+                        if (v.Name == "FireShot" or v.Name == "fireShot") and v:IsA("RemoteEvent") then
+                            fireShot = v
+                            break
+                        end
+                    end
+                end
+                if fireShot then break end
+            end
+        end
+    end
+    
+    -- Если не нашли Zeus конкретно, ищем любой FireShot в экипированном оружии
+    if not fireShot then
+        for _, v in pairs(myChar:GetDescendants()) do
+            if (v.Name == "FireShot" or v.Name == "fireShot") and v:IsA("RemoteEvent") then
+                fireShot = v
+                break
+            end
+        end
+    end
+    
+    if not fireShot then return end
+    
+    -- Точный расчёт для Zeus (целимся в центр тела)
+    local origin = myHead.Position
+    
+    -- Используем предикт позицию + целимся в торс (больше хитбокс)
+    local targetPos = target.predictedPos
+    
+    -- Корректируем высоту на уровень торса
+    local heightOffset = Vector3.new(0, 0.5, 0)
+    targetPos = targetPos + heightOffset
+    
+    -- Точное направление
+    local direction = (targetPos - origin).Unit
+    
+    -- Стреляем в торс (больший хитбокс = меньше миссов)
+    pcall(function()
+        fireShot:FireServer(origin, direction, target.torso)
+    end)
+    
+    return true
+end
+
+-- Главный цикл ZeusBot (с нормальным КД)
+local function StartZeusbot()
+    if zeusbotConnection then return end
+    
+    zeusbotConnection = RunService.Heartbeat:Connect(function()
+        if not zeusbotEnabled then return end
+        
+        local currentTime = tick()
+        -- КД 1 секунда (Zeus имеет долгий КД)
+        if currentTime - zeusbotLastShot < 1.0 then return end
+        
+        local target = ZeusbotFindTarget()
+        
+        if target then
+            local success = ZeusbotShoot(target)
+            if success then
+                zeusbotLastShot = currentTime
+            end
+        end
+    end)
+    
+    SetHotkeyActive("ZeusBot", "ON", true, false)
+end
+
+local function StopZeusbot()
+    if zeusbotConnection then
+        zeusbotConnection:Disconnect()
+        zeusbotConnection = nil
+    end
+    RemoveHotkey("ZeusBot")
+end
+
+-- // AI PEEK V3 FUNCTIONS //
+
+local function CreatePeekPoints()
+    for _, p in pairs(PeekPoints) do
+        if p.part then p.part:Destroy() end
+    end
+    PeekPoints = {}
+    
+    for ring = 1, #RING_DISTANCES do
+        local distance = RING_DISTANCES[ring]
+        for i = 1, POINTS_PER_RING do
+            local p = Instance.new("Part")
+            p.Size = Vector3.new(0.8, 0.8, 0.8)
+            p.Shape = Enum.PartType.Ball
+            p.Anchored = true
+            p.CanCollide = false
+            p.Material = Enum.Material.Neon
+            p.Transparency = 0.5
+            p.BrickColor = BrickColor.new("White")
+            p.Parent = Workspace
+            
+            table.insert(PeekPoints, {
+                part = p,
+                ring = ring,
+                distance = distance,
+                angle = (i - 1) * (360 / POINTS_PER_RING)
+            })
+        end
+    end
+end
+
+local function UpdatePeekPoints(rootPos, char)
+    RayParams.FilterDescendantsInstances = {char}
+    
+    for _, data in pairs(PeekPoints) do
+        local angle = math.rad(data.angle)
+        local x = math.cos(angle) * data.distance
+        local z = math.sin(angle) * data.distance
+        local basePos = rootPos + Vector3.new(x, 0, z)
+        
+        local result = Workspace:Raycast(basePos + Vector3.new(0, 5, 0), Vector3.new(0, -10, 0), RayParams)
+        if result then
+            data.groundY = result.Position.Y
+            data.pos = Vector3.new(basePos.X, result.Position.Y + 0.3, basePos.Z)
+        else
+            data.groundY = rootPos.Y - 3
+            data.pos = Vector3.new(basePos.X, rootPos.Y - 2.5, basePos.Z)
+        end
+        data.part.Position = data.pos
+    end
+end
+
+local function RemovePeekPoints()
+    for _, data in pairs(PeekPoints) do
+        if data.part then data.part:Destroy() end
+    end
+    PeekPoints = {}
+end
+
+-- Проверка пути (не через стену)
+local function CanReachPoint(fromPos, toPos, char)
+    RayParams.FilterDescendantsInstances = {char}
+    
+    for _, h in ipairs({1, 2, 3}) do
+        local start = fromPos + Vector3.new(0, h, 0)
+        local finish = toPos + Vector3.new(0, h, 0)
+        local dir = finish - start
+        
+        local result = Workspace:Raycast(start, dir, RayParams)
+        if result and result.Instance.CanCollide then
+            return false
+        end
+    end
+    return true
+end
+
+-- Враг видит эту точку?
+local function EnemyCanSeePoint(enemyRoot, pointPos, myChar, enemyChar)
+    RayParams.FilterDescendantsInstances = {myChar, enemyChar}
+    
+    local enemyEye = enemyRoot.Position + Vector3.new(0, 1.5, 0)
+    local targets = {
+        pointPos + Vector3.new(0, 1, 0),
+        pointPos + Vector3.new(0, 2.5, 0),
+    }
+    
+    for _, target in ipairs(targets) do
+        local dir = target - enemyEye
+        local result = Workspace:Raycast(enemyEye, dir, RayParams)
+        
+        if not result then return true end
+        if not result.Instance.CanCollide then return true end
+    end
+    return false
+end
+
+-- Я вижу врага с этой точки?
+local function CanSeeEnemyFromPoint(pointPos, enemyRoot, myChar, enemyChar)
+    RayParams.FilterDescendantsInstances = {myChar, enemyChar}
+    
+    local eyePos = pointPos + Vector3.new(0, 2, 0)
+    local targets = {
+        enemyRoot.Position,
+        enemyRoot.Position + Vector3.new(0, 1.5, 0),
+    }
+    
+    for _, target in ipairs(targets) do
+        local dir = target - eyePos
+        local result = Workspace:Raycast(eyePos, dir, RayParams)
+        
+        if not result then return true end
+        if not result.Instance.CanCollide then return true end
+    end
+    return false
+end
+
+-- ТИМ ЧЕК
+local function IsTeammate(player)
+    if not LocalPlayer.Team then return false end
+    if not player.Team then return false end
+    return player.Team == LocalPlayer.Team
+end
+
+local function IsTeammateByColor(player)
+    if LocalPlayer.TeamColor and player.TeamColor then
+        return LocalPlayer.TeamColor == player.TeamColor
+    end
+    return false
+end
+
+local function FindEnemy(myChar, myRoot)
+    local nearest, nearestDist, nearestChar = nil, ENEMY_RANGE, nil
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if IsTeammate(player) then continue end
+            if IsTeammateByColor(player) then continue end
+            
+            local char = player.Character
+            if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                
+                if root and hum and hum.Health > 0 then
+                    local dist = (root.Position - myRoot.Position).Magnitude
+                    if dist < nearestDist then
+                        nearestDist = dist
+                        nearest = root
+                        nearestChar = char
+                    end
+                end
+            end
+        end
+    end
+    return nearest, nearestChar, nearestDist
+end
+
+-- ГЛАВНЫЙ АНАЛИЗ
+local function AnalyzePeekPoints(myRoot, myChar, enemyRoot, enemyChar)
+    local best = nil
+    local bestScore = -9999
+    
+    for _, data in pairs(PeekPoints) do
+        local pointPos = data.pos
+        
+        local canReach = CanReachPoint(myRoot.Position, pointPos, myChar)
+        
+        if not canReach then
+            data.part.BrickColor = BrickColor.new("Really red")
+            data.part.Transparency = 0.7
+        else
+            local enemySees = EnemyCanSeePoint(enemyRoot, pointPos, myChar, enemyChar)
+            local iCanSee = CanSeeEnemyFromPoint(pointPos, enemyRoot, myChar, enemyChar)
+            
+            if enemySees and iCanSee then
+                data.part.BrickColor = BrickColor.new("Cyan")
+                data.part.Transparency = 0.2
+                
+                local dist = (enemyRoot.Position - pointPos).Magnitude
+                local score = 1000 - dist + (data.ring == 1 and 100 or 0)
+                
+                if score > bestScore then
+                    bestScore = score
+                    best = data
+                end
+                
+            elseif enemySees then
+                data.part.BrickColor = BrickColor.new("Bright orange")
+                data.part.Transparency = 0.35
+                
+            elseif iCanSee then
+                data.part.BrickColor = BrickColor.new("Bright green")
+                data.part.Transparency = 0.4
+            else
+                data.part.BrickColor = BrickColor.new("Lime green")
+                data.part.Transparency = 0.55
+            end
+        end
+    end
+    
+    return best
+end
+
+local function SmoothMove(rootPart, targetPos, char)
+    local startPos = rootPart.Position
+    local lookVec = rootPart.CFrame.LookVector
+    local dist = (targetPos - startPos).Magnitude
+    local moveTime = dist / MOVE_SPEED
+    local steps = math.max(8, math.ceil(moveTime * 60))
+    
+    RayParams.FilterDescendantsInstances = {char}
+    
+    for i = 1, steps do
+        if not IsPeekActive or not rootPart.Parent then break end
+        
+        local t = i / steps
+        local smoothT = 1 - (1 - t)^2
+        local pos = startPos:Lerp(targetPos, smoothT)
+        
+        local ground = Workspace:Raycast(pos + Vector3.new(0, 4, 0), Vector3.new(0, -8, 0), RayParams)
+        if ground then
+            pos = Vector3.new(pos.X, ground.Position.Y + 3, pos.Z)
+        end
+        
+        rootPart.CFrame = CFrame.new(pos, pos + lookVec)
+        task.wait(moveTime / steps)
+    end
+end
+
+local function DoPeek(rootPart, data, char)
+    if IsTeleporting then return end
+    if tick() - LastTPTime < PEEK_COOLDOWN then return end
+    
+    IsTeleporting = true
+    LastTPTime = tick()
+    
+    local point = data.part
+    local targetPos = Vector3.new(data.pos.X, data.groundY + 3, data.pos.Z)
+    
+    point.BrickColor = BrickColor.new("Bright yellow")
+    point.Size = Vector3.new(2, 2, 2)
+    
+    local originalCFrame = rootPart.CFrame
+    
+    SmoothMove(rootPart, targetPos, char)
+    task.wait(PEEK_TIME)
+    
+    if rootPart and rootPart.Parent then
+        SmoothMove(rootPart, originalCFrame.Position, char)
+        rootPart.CFrame = originalCFrame
+    end
+    
+    point.Size = Vector3.new(0.8, 0.8, 0.8)
+    IsTeleporting = false
+end
+
+local function StartAIPeek()
+    if IsPeekActive then return end
+    
+    IsPeekActive = true
+    CreatePeekPoints()
+    
+    task.spawn(function()
+        while IsPeekActive do
+            task.wait(CHECK_INTERVAL)
+            if IsTeleporting then continue end
+            
+            local character = LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then continue end
+            
+            UpdatePeekPoints(rootPart.Position, character)
+            
+            local enemyRoot, enemyChar = FindEnemy(character, rootPart)
+            
+            if enemyRoot and enemyChar then
+                local best = AnalyzePeekPoints(rootPart, character, enemyRoot, enemyChar)
+                
+                if best then
+                    DoPeek(rootPart, best, character)
+                end
+            else
+                for _, data in pairs(PeekPoints) do
+                    data.part.BrickColor = BrickColor.new("White")
+                    data.part.Transparency = 0.5
+                end
+            end
+        end
+    end)
+    
+    SetHotkeyActive("AI Peek", aiPeekKey.Name, true, true)
+end
+
+local function StopAIPeek()
+    IsPeekActive = false
+    RemovePeekPoints()
+    
+    if aiPeekMode == "Toggle" then
+        RemoveHotkey("AI Peek")
+    else
+        SetHotkeyActive("AI Peek", aiPeekKey.Name, true, false)
+    end
+end
+
+local function ToggleAIPeek()
+    if IsPeekActive then
+        StopAIPeek()
+    else
+        StartAIPeek()
+    end
+end
+
+
+-- // Библиотека UI //
+local Library = {}
+
+function Library:Create(title)
+    if gui then gui:Destroy() end
+    
+    gui = Instance.new("ScreenGui")
+    gui.Name = "GamesenseRoblox"
+    gui.ResetOnSpawn = false
+    gui.Parent = game:GetService("CoreGui")
+    
+    CreateHotkeyList()
+    CreateWatermark()
+    
+    local Window = Instance.new("Frame")
+    Window.Name = "Main"
+    Window.Size = UDim2.new(0, 620, 0, 450)
+    Window.Position = UDim2.new(0.5, -310, 0.5, -225)
+    Window.BackgroundColor3 = Theme.Main
+    Window.BorderSizePixel = 0
+    Window.Parent = gui
+    mainFrame = Window
+    
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Color = Color3.fromRGB(60,60,60)
+    Stroke.Thickness = 1
+    Stroke.Parent = Window
+    
+    local GradientLine = Instance.new("Frame")
+    GradientLine.Size = UDim2.new(1, 0, 0, 2)
+    GradientLine.BorderSizePixel = 0
+    GradientLine.Parent = Window
+    
+    local UIGradient = Instance.new("UIGradient")
+    UIGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(59, 174, 254)),
+        ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 85, 255)),
+        ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 238, 85)),
+        ColorSequenceKeypoint.new(0.6, Color3.fromRGB(85, 255, 85)),
+        ColorSequenceKeypoint.new(0.8, Color3.fromRGB(85, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(59, 174, 254)),
+    })
+    UIGradient.Parent = GradientLine
+    
+    task.spawn(function()
+        local rot = 0
+        while Window and Window.Parent do
+            rot = rot + 2
+            UIGradient.Rotation = rot
+            task.wait(0.02)
+        end
+    end)
+    
+    local Title = Instance.new("TextLabel")
+    Title.Text = title
+    Title.Size = UDim2.new(1, 0, 0, 20)
+    Title.Position = UDim2.new(0, 0, 0, 4)
+    Title.BackgroundTransparency = 1
+    Title.Font = Theme.Font
+    Title.TextSize = 13
+    Title.TextColor3 = Theme.Text
+    Title.Parent = Window
+    
+    local TabContainer = Instance.new("Frame")
+    TabContainer.Size = UDim2.new(1, -20, 0, 40)
+    TabContainer.Position = UDim2.new(0, 10, 0, 30)
+    TabContainer.BackgroundColor3 = Theme.Group
+    TabContainer.BorderSizePixel = 1
+    TabContainer.BorderColor3 = Theme.Stroke
+    TabContainer.Parent = Window
+    
+    local TabLayout = Instance.new("UIListLayout")
+    TabLayout.FillDirection = Enum.FillDirection.Horizontal
+    TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    TabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    TabLayout.Padding = UDim.new(0, 15)
+    TabLayout.Parent = TabContainer
+    
+    local PageContainer = Instance.new("Frame")
+    PageContainer.Size = UDim2.new(1, -20, 1, -85)
+    PageContainer.Position = UDim2.new(0, 10, 0, 75)
+    PageContainer.BackgroundTransparency = 1
+    PageContainer.Parent = Window
+    
+    Window.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and input.Position.Y < Window.AbsolutePosition.Y + 30 then
+            dragging = true
+            dragStart = input.Position
+            startPos = Window.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    
+    Window.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+            local delta = input.Position - dragStart
+            Window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    local Tabs = {}
+    
+    function Tabs:NewTab(name)
+        local TabBtn = Instance.new("TextButton")
+        TabBtn.Text = name
+        TabBtn.Size = UDim2.new(0, 80, 1, 0)
+        TabBtn.BackgroundTransparency = 1
+        TabBtn.Font = Theme.Font
+        TabBtn.TextSize = 13
+        TabBtn.TextColor3 = Theme.TextDim
+        TabBtn.Parent = TabContainer
+        
+        local Page = Instance.new("ScrollingFrame")
+        Page.Size = UDim2.new(1, 0, 1, 0)
+        Page.BackgroundTransparency = 1
+        Page.Visible = false
+        Page.ScrollBarThickness = 2
+        Page.ScrollBarImageColor3 = Theme.Accent
+        Page.BorderSizePixel = 0
+        Page.Parent = PageContainer
+        
+        local LeftCol = Instance.new("Frame")
+        LeftCol.Size = UDim2.new(0.48, 0, 1, 0)
+        LeftCol.BackgroundTransparency = 1
+        LeftCol.Parent = Page
+        
+        local LeftList = Instance.new("UIListLayout")
+        LeftList.Padding = UDim.new(0, 12)
+        LeftList.Parent = LeftCol
+        
+        local RightCol = Instance.new("Frame")
+        RightCol.Size = UDim2.new(0.48, 0, 1, 0)
+        RightCol.Position = UDim2.new(0.52, 0, 0, 0)
+        RightCol.BackgroundTransparency = 1
+        RightCol.Parent = Page
+        
+        local RightList = Instance.new("UIListLayout")
+        RightList.Padding = UDim.new(0, 12)
+        RightList.Parent = RightCol
+        
+        TabBtn.MouseButton1Click:Connect(function()
+            for _, p in pairs(PageContainer:GetChildren()) do p.Visible = false end
+            for _, t in pairs(TabContainer:GetChildren()) do if t:IsA("TextButton") then t.TextColor3 = Theme.TextDim end end
+            Page.Visible = true
+            TabBtn.TextColor3 = Theme.Accent
+        end)
+        
+        if #TabContainer:GetChildren() == 2 then
+            Page.Visible = true
+            TabBtn.TextColor3 = Theme.Accent
+        end
+        
+        local TabLogic = {}
+        
+        function TabLogic:NewGroupbox(side, title)
+            local ParentCol = (side == "Right") and RightCol or LeftCol
+            
+            local Group = Instance.new("Frame")
+            Group.Size = UDim2.new(1, 0, 0, 20)
+            Group.BackgroundTransparency = 1
+            Group.BorderSizePixel = 0
+            Group.Parent = ParentCol
+            
+            local Border = Instance.new("Frame")
+            Border.Size = UDim2.new(1, 0, 1, -8)
+            Border.Position = UDim2.new(0, 0, 0, 8)
+            Border.BackgroundColor3 = Theme.Main
+            Border.BorderColor3 = Theme.Stroke
+            Border.BorderSizePixel = 1
+            Border.Parent = Group
+            
+            local TitleLabel = Instance.new("TextLabel")
+            TitleLabel.Text = title
+            TitleLabel.Size = UDim2.new(0, 0, 0, 0)
+            TitleLabel.Position = UDim2.new(0, 12, 0, 8)
+            TitleLabel.AutomaticSize = Enum.AutomaticSize.X
+            TitleLabel.BackgroundColor3 = Theme.Main
+            TitleLabel.BorderSizePixel = 0
+            TitleLabel.TextColor3 = Theme.Text
+            TitleLabel.Font = Theme.Font
+            TitleLabel.TextSize = 12
+            TitleLabel.ZIndex = 2
+            TitleLabel.Parent = Group
+            
+            local Content = Instance.new("Frame")
+            Content.Size = UDim2.new(1, -16, 1, -24)
+            Content.Position = UDim2.new(0, 8, 0, 16)
+            Content.BackgroundTransparency = 1
+            Content.Parent = Border
+            
+            local List = Instance.new("UIListLayout")
+            List.SortOrder = Enum.SortOrder.LayoutOrder
+            List.Padding = UDim.new(0, 8)
+            List.Parent = Content
+            
+            List:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                Group.Size = UDim2.new(1, 0, 0, List.AbsoluteContentSize.Y + 30)
+            end)
+            
+            local GroupLogic = {}
+            
+            function GroupLogic:Toggle(text, default, callback)
+                local ToggleFrame = Instance.new("Frame")
+                ToggleFrame.Size = UDim2.new(1, 0, 0, 20)
+                ToggleFrame.BackgroundTransparency = 1
+                ToggleFrame.Parent = Content
+                
+                local Checkbox = Instance.new("Frame")
+                Checkbox.Size = UDim2.new(0, 16, 0, 16)
+                Checkbox.Position = UDim2.new(0, 0, 0, 2)
+                Checkbox.BackgroundColor3 = Color3.fromRGB(25,25,25)
+                Checkbox.BorderColor3 = Color3.fromRGB(5,5,5)
+                Checkbox.BorderSizePixel = 1
+                Checkbox.Parent = ToggleFrame
+                
+                local CheckStroke = Instance.new("UIStroke")
+                CheckStroke.Color = Theme.Stroke
+                CheckStroke.Thickness = 1
+                CheckStroke.Parent = Checkbox
+                
+                local Label = Instance.new("TextLabel")
+                Label.Text = text
+                Label.Size = UDim2.new(1, -25, 1, 0)
+                Label.Position = UDim2.new(0, 25, 0, 0)
+                Label.BackgroundTransparency = 1
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.TextColor3 = Theme.TextDim
+                Label.Font = Theme.Font
+                Label.TextSize = 13
+                Label.Parent = ToggleFrame
+                
+                local Button = Instance.new("TextButton")
+                Button.Size = UDim2.new(1, 0, 1, 0)
+                Button.BackgroundTransparency = 1
+                Button.Text = ""
+                Button.Parent = ToggleFrame
+                
+                local enabled = default
+                
+                local function Update()
+                    if enabled then
+                        Checkbox.BackgroundColor3 = Theme.Accent
+                        CheckStroke.Color = Color3.new(0,0,0)
+                        Label.TextColor3 = Theme.Text
+                    else
+                        Checkbox.BackgroundColor3 = Color3.fromRGB(25,25,25)
+                        CheckStroke.Color = Theme.Stroke
+                        Label.TextColor3 = Theme.TextDim
+                    end
+                    if callback then callback(enabled) end
+                end
+                
+                Button.MouseButton1Click:Connect(function()
+                    enabled = not enabled
+                    Update()
+                end)
+                
+                Update()
+                return GroupLogic
+            end
+            
+            function GroupLogic:Dropdown(text, options, default, callback)
+                local DropFrame = Instance.new("Frame")
+                DropFrame.Size = UDim2.new(1, 0, 0, 40)
+                DropFrame.BackgroundTransparency = 1
+                DropFrame.Parent = Content
+                
+                local Label = Instance.new("TextLabel")
+                Label.Text = text
+                Label.Size = UDim2.new(1, 0, 0, 15)
+                Label.BackgroundTransparency = 1
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.TextColor3 = Theme.TextDim
+                Label.Font = Theme.Font
+                Label.TextSize = 13
+                Label.Parent = DropFrame
+                
+                local Box = Instance.new("TextButton")
+                Box.Size = UDim2.new(1, 0, 0, 20)
+                Box.Position = UDim2.new(0, 0, 0, 18)
+                Box.BackgroundColor3 = Color3.fromRGB(25,25,25)
+                Box.BorderColor3 = Theme.Stroke
+                Box.Text = default
+                Box.TextColor3 = Theme.Text
+                Box.Font = Theme.Font
+                Box.TextSize = 13
+                Box.Parent = DropFrame
+                
+                local current = default
+                
+                Box.MouseButton1Click:Connect(function()
+                    local nextIndex = 1
+                    for i, v in ipairs(options) do
+                        if v == current then nextIndex = i + 1 end
+                    end
+                    if nextIndex > #options then nextIndex = 1 end
+                    current = options[nextIndex]
+                    Box.Text = current
+                    if callback then callback(current) end
+                end)
+            end
+            
+            function GroupLogic:Keybind(text, default, callback)
+                local BindFrame = Instance.new("Frame")
+                BindFrame.Size = UDim2.new(1, 0, 0, 20)
+                BindFrame.BackgroundTransparency = 1
+                BindFrame.Parent = Content
+                
+                local Label = Instance.new("TextLabel")
+                Label.Text = text
+                Label.Size = UDim2.new(0.6, 0, 1, 0)
+                Label.BackgroundTransparency = 1
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.TextColor3 = Theme.TextDim
+                Label.Font = Theme.Font
+                Label.TextSize = 13
+                Label.Parent = BindFrame
+                
+                local Button = Instance.new("TextButton")
+                Button.Size = UDim2.new(0.3, 0, 1, 0)
+                Button.Position = UDim2.new(0.7, 0, 0, 0)
+                Button.BackgroundColor3 = Color3.fromRGB(22,22,22)
+                Button.BorderColor3 = Theme.Stroke
+                Button.Text = "[" .. default.Name .. "]"
+                Button.TextColor3 = Theme.TextDim
+                Button.Font = Theme.Font
+                Button.TextSize = 11
+                Button.Parent = BindFrame
+                
+                local waiting = false
+                
+                Button.MouseButton1Click:Connect(function()
+                    waiting = true
+                    Button.Text = "[ ... ]"
+                    Button.TextColor3 = Theme.Accent
+                end)
+                
+                table.insert(connections, UserInputService.InputBegan:Connect(function(input)
+                    if waiting and input.UserInputType == Enum.UserInputType.Keyboard then
+                        waiting = false
+                        Button.Text = "[" .. input.KeyCode.Name .. "]"
+                        Button.TextColor3 = Theme.TextDim
+                        if callback then callback(input.KeyCode) end
+                    end
+                end))
+            end
+            
+            function GroupLogic:Button(text, callback)
+                local BtnFrame = Instance.new("TextButton")
+                BtnFrame.Size = UDim2.new(1, 0, 0, 22)
+                BtnFrame.BackgroundColor3 = Color3.fromRGB(25,25,25)
+                BtnFrame.BorderColor3 = Theme.Stroke
+                BtnFrame.Text = text
+                BtnFrame.TextColor3 = Theme.Text
+                BtnFrame.Font = Theme.Font
+                BtnFrame.TextSize = 13
+                BtnFrame.Parent = Content
+                BtnFrame.MouseButton1Click:Connect(callback)
+            end
+            
+            function GroupLogic:Slider(text, min, max, default, callback)
+                local SliderFrame = Instance.new("Frame")
+                SliderFrame.Size = UDim2.new(1, 0, 0, 35)
+                SliderFrame.BackgroundTransparency = 1
+                SliderFrame.Parent = Content
+                
+                local Label = Instance.new("TextLabel")
+                Label.Text = text .. ": " .. default
+                Label.Name = "Label"
+                Label.Size = UDim2.new(1, 0, 0, 15)
+                Label.BackgroundTransparency = 1
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.TextColor3 = Theme.TextDim
+                Label.Font = Theme.Font
+                Label.TextSize = 13
+                Label.Parent = SliderFrame
+                
+                local SliderBG = Instance.new("Frame")
+                SliderBG.Size = UDim2.new(1, 0, 0, 12)
+                SliderBG.Position = UDim2.new(0, 0, 0, 18)
+                SliderBG.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+                SliderBG.BorderColor3 = Theme.Stroke
+                SliderBG.Parent = SliderFrame
+                
+                local SliderFill = Instance.new("Frame")
+                SliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+                SliderFill.BackgroundColor3 = Theme.Accent
+                SliderFill.BorderSizePixel = 0
+                SliderFill.Parent = SliderBG
+                
+                local value = default
+                local draggingSlider = false
+                
+                local function UpdateSlider(input)
+                    local relativeX = math.clamp((input.Position.X - SliderBG.AbsolutePosition.X) / SliderBG.AbsoluteSize.X, 0, 1)
+                    value = math.floor(min + (max - min) * relativeX)
+                    SliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+                    Label.Text = text .. ": " .. value
+                    if callback then callback(value) end
+                end
+                
+                SliderBG.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        draggingSlider = true
+                        UpdateSlider(input)
+                    end
+                end)
+                
+                SliderBG.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        draggingSlider = false
+                    end
+                end)
+                
+                table.insert(connections, UserInputService.InputChanged:Connect(function(input)
+                    if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+                        UpdateSlider(input)
+                    end
+                end))
+                
+                return GroupLogic
+            end
+            
+            return GroupLogic
+        end
+        
+        return TabLogic
+    end
+    
+    return Tabs
+end
+
+
+-- // Инициализация UI //
+local Window = Library:Create("Oxygen.Lord LUA")
+
+-- >> TAB: Rage
+local RageTab = Window:NewTab("Rage")
+
+-- RAGEBOT GROUP
+local RagebotGroup = RageTab:NewGroupbox("Left", "Ragebot")
+
+RagebotGroup:Toggle("Enable Ragebot", false, function(state)
+    ragebotEnabled = state
+    if state then
+        StartRagebot()
+    else
+        StopRagebot()
+    end
+end)
+
+RagebotGroup:Toggle("Resolver", false, function(state)
+    ragebotResolverEnabled = state
+    if ragebotEnabled then
+        if state then
+            SetHotkeyActive("Resolver", "ON", true, false)
+        else
+            RemoveHotkey("Resolver")
+        end
+    end
+end)
+
+RagebotGroup:Toggle("No Spread", false, function(state)
+    ragebotNoSpreadEnabled = state
+    if ragebotEnabled then
+        if state then
+            SetHotkeyActive("No Spread", "ON", true, false)
+        else
+            RemoveHotkey("No Spread")
+        end
+    end
+end)
+
+RagebotGroup:Toggle("Prediction", true, function(state)
+    ragebotPredictionEnabled = state
+end)
+
+RagebotGroup:Toggle("Auto Fire", true, function(state)
+    ragebotAutoFire = state
+end)
+
+RagebotGroup:Toggle("Team Check", true, function(state)
+    ragebotTeamCheck = state
+end)
+
+RagebotGroup:Dropdown("Hitbox", {"Head", "Torso", "Random"}, "Head", function(val)
+    ragebotHitbox = val
+end)
+
+RagebotGroup:Slider("Max Distance", 100, 1000, 500, function(val)
+    ragebotMaxDistance = val
+end)
+
+RagebotGroup:Slider("Fire Rate (ms)", 50, 500, 100, function(val)
+    ragebotFireRate = val / 1000
+end)
+
+RagebotGroup:Slider("Prediction Multi", 50, 200, 100, function(val)
+    predictionMultiplier = val / 100
+end)
+
+-- ZEUSBOT GROUP
+local ZeusbotGroup = RageTab:NewGroupbox("Right", "ZeusBot")
+
+ZeusbotGroup:Toggle("Enable ZeusBot", false, function(state)
+    zeusbotEnabled = state
+    if state then
+        StartZeusbot()
+    else
+        StopZeusbot()
+    end
+end)
+
+ZeusbotGroup:Toggle("Team Check", true, function(state)
+    zeusbotTeamCheck = state
+end)
+
+ZeusbotGroup:Slider("Max Distance", 3, 10, 5, function(val)
+    zeusbotMaxDistance = val
+end)
+
+local ExploitGroup = RageTab:NewGroupbox("Right", "Exploits")
+ExploitGroup:Toggle("Double Tap", false, function(state) 
+    doubleTapEnabled = state
+    if state and currentMode == "Deffensive" then
+        SetHotkeyActive("Deffensive", deffensiveBind.Name, true, false)
+    else
+        RemoveHotkey("Deffensive")
+    end
+end)
+
+ExploitGroup:Dropdown("Exploit Mode", {"Off", "Deffensive"}, "Off", function(val)
+    currentMode = val
+    if val == "Deffensive" and doubleTapEnabled then
+        SetHotkeyActive("Deffensive", deffensiveBind.Name, true, false)
+    else
+        RemoveHotkey("Deffensive")
+    end
+end)
+
+ExploitGroup:Keybind("Deffensive Key", Enum.KeyCode.F, function(key)
+    deffensiveBind = key
+    if doubleTapEnabled and currentMode == "Deffensive" then
+        SetHotkeyActive("Deffensive", key.Name, true, false)
+    end
+end)
+
+-- AI PEEK GROUP (V3 с Toggle поддержкой)
+local AIPeekGroup = RageTab:NewGroupbox("Left", "AI Peek V3")
+
+AIPeekGroup:Toggle("Enable AI Peek", false, function(state)
+    aiPeekEnabled = state
+    if state then
+        SetHotkeyActive("AI Peek", aiPeekKey.Name, true, false)
+    else
+        StopAIPeek()
+        RemoveHotkey("AI Peek")
+    end
+end)
+
+AIPeekGroup:Keybind("AI Peek Key", Enum.KeyCode.LeftAlt, function(key)
+    aiPeekKey = key
+    if aiPeekEnabled then
+        SetHotkeyActive("AI Peek", key.Name, true, false)
+    end
+end)
+
+AIPeekGroup:Dropdown("Peek Mode", {"Hold", "Toggle"}, "Hold", function(val)
+    aiPeekMode = val
+end)
+
+-- >> TAB: AA
+local AATab = Window:NewTab("AA")
+
+local FakeduckGroup = AATab:NewGroupbox("Left", "Fakeduck Pro")
+FakeduckGroup:Toggle("Enable Fakeduck", false, function(state)
+    if state then
+        EnableFakeduck()
+    else
+        DisableFakeduck()
+    end
+end)
+
+FakeduckGroup:Toggle("Team Check", true, function(state)
+    fakeduckTeamCheck = state
+end)
+
+FakeduckGroup:Toggle("Fake Flick", false, function(state)
+    fakeduckFakeFlick = state
+end)
+
+FakeduckGroup:Keybind("Fakeduck Key", Enum.KeyCode.X, function(key)
+    fakeduckKey = key
+    if fakeduckEnabled then
+        SetHotkeyActive("Fakeduck", key.Name, true, true)
+    end
+end)
+
+FakeduckGroup:Keybind("Lock Crouch Key", Enum.KeyCode.C, function(key)
+    fakeduckLockKey = key
+end)
+
+-- ANTIAIM GROUP
+local AntiaimGroup = AATab:NewGroupbox("Right", "Anti-Aim")
+AntiaimGroup:Toggle("Enable Anti-Aim", false, function(state)
+    antiaimEnabled = state
+    if state then
+        StartAntiaim()
+        SetHotkeyActive("Anti-Aim", "ON", true, false)
+    else
+        StopAntiaim()
+        RemoveHotkey("Anti-Aim")
+    end
+end)
+
+AntiaimGroup:Dropdown("AA Mode", {"Off", "5 Yaw", "3 Yaw", "Switch", "Jitter", "Spin", "Random", "Backwards", "Sideways", "Fake Spin", "Desync"}, "Off", function(val)
+    antiaimMode = val
+    if antiaimEnabled and val ~= "Off" then
+        SetHotkeyActive("Anti-Aim", val, true, false)
+    elseif val == "Off" then
+        RemoveHotkey("Anti-Aim")
+    end
+end)
+
+-- AA SETTINGS GROUP
+local AASettingsGroup = AATab:NewGroupbox("Right", "AA Settings")
+AASettingsGroup:Slider("Jitter Angle", 20, 180, 60, function(val)
+    antiaimJitterAngle = val
+end)
+
+AASettingsGroup:Slider("Switch Angle", 30, 180, 120, function(val)
+    antiaimSwitchAngle = val
+end)
+
+AASettingsGroup:Slider("Spin Speed", 1, 50, 15, function(val)
+    antiaimSpinSpeed = val
+end)
+
+AASettingsGroup:Slider("5 Yaw Delay (ms)", 50, 500, 150, function(val)
+    antiaim5YawSpeed = val / 1000
+end)
+
+AASettingsGroup:Slider("3 Yaw Delay (ms)", 50, 500, 200, function(val)
+    antiaim3YawSpeed = val / 1000
+end)
+
+AASettingsGroup:Slider("Switch Speed", 1, 30, 10, function(val)
+    antiaimSwitchSpeed = val
+end)
+
+-- BODY LEAN GROUP
+local BodyLeanGroup = AATab:NewGroupbox("Left", "Body Lean")
+BodyLeanGroup:Toggle("Enable Body Lean", false, function(state)
+    bodyLeanEnabled = state
+    if state then
+        StartBodyLean()
+        SetHotkeyActive("Body Lean", bodyLeanMode, true, false)
+    else
+        StopBodyLean()
+        RemoveHotkey("Body Lean")
+    end
+end)
+
+BodyLeanGroup:Dropdown("Lean Mode", {"Off", "Left", "Right", "Jitter", "Spin"}, "Off", function(val)
+    bodyLeanMode = val
+    if bodyLeanEnabled and val ~= "Off" then
+        SetHotkeyActive("Body Lean", val, true, false)
+    elseif val == "Off" then
+        RemoveHotkey("Body Lean")
+    end
+end)
+
+BodyLeanGroup:Slider("Lean Amount", 5, 60, 30, function(val)
+    bodyLeanAmount = val
+end)
+
+-- >> TAB: Visuals (ПЕРЕНЕСЕНО СЮДА)
+local VisualsTab = Window:NewTab("Visuals")
+
+-- WATERMARK GROUP (перенесено в Visuals)
+local WatermarkGroup = VisualsTab:NewGroupbox("Left", "Watermark")
+WatermarkGroup:Toggle("Show Watermark", true, function(state)
+    watermarkVisible = state
+    if watermarkFrame then
+        watermarkFrame.Visible = state
+    end
+end)
+
+-- HOTKEYS GROUP (перенесено в Visuals)
+local HotkeysGroup = VisualsTab:NewGroupbox("Left", "Hotkey List")
+HotkeysGroup:Toggle("Show Hotkey List", true, function(state)
+    hotkeyListVisible = state
+    if hotkeyListFrame then
+        hotkeyListFrame.Visible = state
+    end
+end)
+
+-- >> TAB: Misc
+local MiscTab = Window:NewTab("Misc")
+
+local MenuGroup = MiscTab:NewGroupbox("Left", "Menu")
+MenuGroup:Keybind("Menu Key", Enum.KeyCode.Delete, function(key)
+    currentKeybind = key
+end)
+
+MenuGroup:Button("Unload Script", function()
+    StopRagebot()
+    StopZeusbot()
+    StopAIPeek()
+    DisableFakeduck()
+    StopAntiaim()
+    StopBodyLean()
+    if gui then gui:Destroy() end
+    for _, c in pairs(connections) do c:Disconnect() end
+    for _, e in pairs(effects) do e:Destroy() end
+end)
+
+
+-- // INPUT HANDLER //
+table.insert(connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    -- DEFFENSIVE WARP
+    if doubleTapEnabled and currentMode == "Deffensive" and input.KeyCode == deffensiveBind then
+        SetHotkeyActive("Deffensive", deffensiveBind.Name, true, true)
+        local currentTime = os.time()
+        if currentTime - lastDeffTime >= 5 then
+            local character = LocalPlayer.Character
+            if character and character:FindFirstChild("Humanoid") and character:FindFirstChild("HumanoidRootPart") then
+                local humanoid = character.Humanoid
+                local rootPart = character.HumanoidRootPart
+                local direction = humanoid.MoveDirection
+                if direction.Magnitude > 0 then
+                    local teleportDistance = 5.0
+                    local targetPosition = rootPart.Position + (direction.Unit * teleportDistance)
+                    local raycastParams = RaycastParams.new()
+                    raycastParams.FilterDescendantsInstances = {character}
+                    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                    raycastParams.IgnoreWater = true
+                    local raycastResult = Workspace:Raycast(rootPart.Position, direction.Unit * teleportDistance, raycastParams)
+                    if not raycastResult then
+                        character:PivotTo(CFrame.new(targetPosition) * rootPart.CFrame.Rotation)
+                        humanoid.WalkSpeed = 0
+                        lastDeffTime = currentTime
+                        task.delay(0.4, function()
+                            humanoid.WalkSpeed = 16
+                        end)
+                    end
+                end
+            end
+        end
+    end
+    
+    -- AI PEEK V3 (с поддержкой Hold и Toggle)
+    if aiPeekEnabled and input.KeyCode == aiPeekKey then
+        if aiPeekMode == "Hold" then
+            -- Hold режим - запускаем при нажатии
+            SetHotkeyActive("AI Peek", aiPeekKey.Name, true, true)
+            StartAIPeek()
+        else
+            -- Toggle режим - переключаем
+            ToggleAIPeek()
+        end
+    end
+    
+    -- FAKEDUCK TOGGLE
+    if input.KeyCode == fakeduckKey then
+        ToggleFakeduck()
+    end
+    
+    -- FAKEDUCK LOCK KEY
+    if input.KeyCode == fakeduckLockKey then
+        fakeduckIsLockHeld = true
+    end
+    
+    -- MENU TOGGLE
+    if input.KeyCode == currentKeybind then
+        isVisible = not isVisible
+        mainFrame.Visible = isVisible
+        if isVisible then
+            local blur = Instance.new("DepthOfFieldEffect")
+            blur.FarIntensity = 0.6
+            blur.FocusDistance = 50
+            blur.InFocusRadius = 50
+            blur.NearIntensity = 0.6
+            blur.Parent = Lighting
+            table.insert(effects, blur)
+        else
+            for _, e in pairs(effects) do e:Destroy() end
+            effects = {}
+        end
+    end
+end))
+
+table.insert(connections, UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    -- AI PEEK RELEASE (только для Hold режима)
+    if aiPeekEnabled and input.KeyCode == aiPeekKey then
+        if aiPeekMode == "Hold" then
+            SetHotkeyActive("AI Peek", aiPeekKey.Name, true, false)
+            StopAIPeek()
+        end
+        -- В Toggle режиме ничего не делаем при отпускании
+    end
+    
+    -- DEFFENSIVE RELEASE
+    if doubleTapEnabled and currentMode == "Deffensive" and input.KeyCode == deffensiveBind then
+        SetHotkeyActive("Deffensive", deffensiveBind.Name, true, false)
+    end
+    
+    -- FAKEDUCK LOCK RELEASE
+    if input.KeyCode == fakeduckLockKey then
+        fakeduckIsLockHeld = false
+    end
+end))
+
+-- Handle respawn for fakeduck
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    if fakeduckEnabled then
+        DisableFakeduck()
+        task.wait(1)
+        fakeduckCrouchIdleAnim = nil
+        fakeduckCrouchWalkAnim = nil
+        EnableFakeduck()
+    end
+end)
+
+-- Стартовый блюр
+local blur = Instance.new("DepthOfFieldEffect")
+blur.FarIntensity = 0.6
+blur.FocusDistance = 50
+blur.InFocusRadius = 50
+blur.NearIntensity = 0.6
+blur.Parent = Lighting
+table.insert(effects, blur)
+
+print("==========================================")
+print("   Oxygen.Lord V3 - RAGEBOT + ZEUSBOT")
+print("==========================================")
+print("")
+print("Press DELETE to toggle menu")
+print("")
+print("RAGEBOT:")
+print("  - Enable Ragebot: Auto-aim + auto-fire")
+print("  - Resolver: Predicts real enemy position")
+print("  - No Spread: Perfect accuracy")
+print("  - Prediction: Leads shots for moving targets")
+print("  - Hitbox: Head/Torso/Random")
+print("")
+print("ZEUSBOT:")
+print("  - Auto-taze enemies within 5 studs")
+print("  - Just equip Zeus and enable!")
+print("")
+print("AI Peek V3:")
+print("  - Hold mode: Hold key to peek")
+print("  - Toggle mode: Press to start/stop")
+print("")
+print("Fakeduck Pro: X - Toggle, C - Lock crouch")
+print("Anti-Aim modes: 5 Yaw, 3 Yaw, Switch, Jitter, Spin, Random")
+print("")
+print("AI PEEK COLORS:")
+print("  White  = No enemy")
+print("  Red    = BLOCKED (wall)")
+print("  Green  = Safe spot")
+print("  Bright Green = I can see enemy")
+print("  Orange = Enemy sees point")
+print("  CYAN   = PEEK SPOT (enemy sees + I see)")
+print("  Yellow = Peeking now")
+print("==========================================")
